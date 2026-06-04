@@ -1,4 +1,4 @@
-name: "Grant-Stream Tests"
+name: "AgriTrust-Protocol Tests"
 on:
   push:
     branches: [ "main", "feature/*" ]
