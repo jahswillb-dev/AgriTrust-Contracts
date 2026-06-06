@@ -169,7 +169,7 @@ fn test_current_claimable_amounts_are_previewed_without_storage_change() {
 
     set_timestamp(&env, 100);
     client.create_grant(&grant_id, &recipient, &total_amount, &flow_rate, &0u64, &Some(validator.clone()), &None);
-    set_timestamp(&env, 110);
+    set_timestamp(&env, 200);
 
     let (claimable, validator_claimable) = client.get_current_claimable_amounts(&grant_id);
     assert_eq!(claimable, 95 * SCALING_FACTOR);
