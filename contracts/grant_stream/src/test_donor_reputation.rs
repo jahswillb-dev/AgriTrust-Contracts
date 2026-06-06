@@ -18,6 +18,7 @@ use crate::{GrantStatus, REPUTATION_SCALE, BASIS_POINTS, DEFAULT_MIN_FUNDING_THR
 
 fn create_test_env() -> (Env, Address) {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     (env, admin)
 }
