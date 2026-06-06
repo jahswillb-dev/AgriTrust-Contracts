@@ -22,15 +22,22 @@ fn create_test_env() -> (Env, Address) {
     (env, admin)
 }
 
-fn initialize_reputation_system(env: &Env, admin: &Address) {
-    DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+fn with_contract<F: FnOnce()>(env: &Env, f: F) {
+    let contract_id = env.register_contract(None, crate::GrantStreamContract);
+    env.as_contract(&contract_id, f);
 }
 
-fn create_donor_with_projects(
+fn initialize_reputation_system(env: &Env, admin: &Address) {
+    with_contract(env, || {
+        DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+    });
+}
+
+fn create_donor_with_projects_inner(
     env: &Env,
     donor: &Address,
     project_count: u32,
-    success_rate: i128, // in basis points
+    success_rate: i128,
     milestones_per_project: u32,
 ) {
     let successful_projects = (project_count as i128 * success_rate) / BASIS_POINTS;
@@ -38,7 +45,6 @@ fn create_donor_with_projects(
     for i in 0..project_count {
         let project_id = i + 1;
         
-        // Fund project
         DonorReputationContract::record_project_funded(
             env.clone(),
             donor.clone(),
@@ -47,7 +53,6 @@ fn create_donor_with_projects(
             milestones_per_project,
         ).unwrap();
 
-        // Complete milestones based on success rate
         let should_succeed = (i as i128) < successful_projects;
         if should_succeed {
             for milestone in 0..milestones_per_project {
@@ -59,10 +64,21 @@ fn create_donor_with_projects(
                 ).unwrap();
             }
         } else {
-            // Mark project as failed
             DonorReputationContract::record_project_failed(env.clone(), project_id as u64).unwrap();
         }
     }
+}
+
+fn create_donor_with_projects(
+    env: &Env,
+    donor: &Address,
+    project_count: u32,
+    success_rate: i128,
+    milestones_per_project: u32,
+) {
+    with_contract(env, || {
+        create_donor_with_projects_inner(env, donor, project_count, success_rate, milestones_per_project)
+    });
 }
 
 #[test]
