@@ -649,18 +649,24 @@ impl DonorReputationContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Ledger};
+    use soroban_sdk::testutils::Address as _;
+
+    fn with_contract<F: FnOnce()>(env: &Env, f: F) {
+        let contract_id = env.register_contract(None, crate::GrantStreamContract);
+        env.as_contract(&contract_id, f);
+    }
 
     #[test]
     fn test_reputation_initialization() {
         let env = Env::default();
         let admin = Address::generate(&env);
 
-        DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
-
-        let config = DonorReputationContract::get_reputation_config(env.clone());
-        assert_eq!(config.min_funding_threshold, DEFAULT_MIN_FUNDING_THRESHOLD);
-        assert_eq!(config.max_multiplier, MAX_REPUTATION_MULTIPLIER);
+        with_contract(&env, || {
+            DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+            let config = DonorReputationContract::get_reputation_config(env.clone());
+            assert_eq!(config.min_funding_threshold, DEFAULT_MIN_FUNDING_THRESHOLD);
+            assert_eq!(config.max_multiplier, MAX_REPUTATION_MULTIPLIER);
+        });
     }
 
     #[test]
@@ -669,22 +675,23 @@ mod tests {
         let admin = Address::generate(&env);
         let donor = Address::generate(&env);
 
-        DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+        with_contract(&env, || {
+            DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+            DonorReputationContract::record_project_funded(
+                env.clone(),
+                donor.clone(),
+                1,
+                DEFAULT_MIN_FUNDING_THRESHOLD,
+                5,
+            ).unwrap();
 
-        DonorReputationContract::record_project_funded(
-            env.clone(),
-            donor.clone(),
-            1,
-            DEFAULT_MIN_FUNDING_THRESHOLD,
-            5,
-        ).unwrap();
-
-        let metrics = DonorReputationContract::get_project_metrics(env.clone(), 1).unwrap();
-        assert_eq!(metrics.project_id, 1);
-        assert_eq!(metrics.donor, donor);
-        assert_eq!(metrics.funded_amount, DEFAULT_MIN_FUNDING_THRESHOLD);
-        assert_eq!(metrics.total_milestones, 5);
-        assert_eq!(metrics.completed_milestones, 0);
+            let metrics = DonorReputationContract::get_project_metrics(env.clone(), 1).unwrap();
+            assert_eq!(metrics.project_id, 1);
+            assert_eq!(metrics.donor, donor);
+            assert_eq!(metrics.funded_amount, DEFAULT_MIN_FUNDING_THRESHOLD);
+            assert_eq!(metrics.total_milestones, 5);
+            assert_eq!(metrics.completed_milestones, 0);
+        });
     }
 
     #[test]
@@ -693,26 +700,27 @@ mod tests {
         let admin = Address::generate(&env);
         let donor = Address::generate(&env);
 
-        DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+        with_contract(&env, || {
+            DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+            DonorReputationContract::record_project_funded(
+                env.clone(),
+                donor.clone(),
+                1,
+                DEFAULT_MIN_FUNDING_THRESHOLD,
+                3,
+            ).unwrap();
 
-        DonorReputationContract::record_project_funded(
-            env.clone(),
-            donor.clone(),
-            1,
-            DEFAULT_MIN_FUNDING_THRESHOLD,
-            3,
-        ).unwrap();
+            DonorReputationContract::record_milestone_completed(
+                env.clone(),
+                1,
+                0,
+                None,
+            ).unwrap();
 
-        DonorReputationContract::record_milestone_completed(
-            env.clone(),
-            1,
-            0,
-            None,
-        ).unwrap();
-
-        let metrics = DonorReputationContract::get_project_metrics(env.clone(), 1).unwrap();
-        assert_eq!(metrics.completed_milestones, 1);
-        assert_eq!(metrics.project_status, GrantStatus::Active);
+            let metrics = DonorReputationContract::get_project_metrics(env.clone(), 1).unwrap();
+            assert_eq!(metrics.completed_milestones, 1);
+            assert_eq!(metrics.project_status, GrantStatus::Active);
+        });
     }
 
     #[test]
@@ -721,26 +729,26 @@ mod tests {
         let admin = Address::generate(&env);
         let donor = Address::generate(&env);
 
-        DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+        with_contract(&env, || {
+            DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+            DonorReputationContract::record_project_funded(
+                env.clone(),
+                donor.clone(),
+                1,
+                DEFAULT_MIN_FUNDING_THRESHOLD,
+                2,
+            ).unwrap();
 
-        // Fund a project and complete all milestones
-        DonorReputationContract::record_project_funded(
-            env.clone(),
-            donor.clone(),
-            1,
-            DEFAULT_MIN_FUNDING_THRESHOLD,
-            2,
-        ).unwrap();
+            DonorReputationContract::record_milestone_completed(env.clone(), 1, 0, None).unwrap();
+            DonorReputationContract::record_milestone_completed(env.clone(), 1, 1, None).unwrap();
 
-        DonorReputationContract::record_milestone_completed(env.clone(), 1, 0, None).unwrap();
-        DonorReputationContract::record_milestone_completed(env.clone(), 1, 1, None).unwrap();
+            let reputation = DonorReputationContract::get_donor_reputation(env.clone(), donor.clone()).unwrap();
+            assert_eq!(reputation.success_rate, BASIS_POINTS);
+            assert_eq!(reputation.reputation_score, REPUTATION_SCALE);
 
-        let reputation = DonorReputationContract::get_donor_reputation(env.clone(), donor.clone()).unwrap();
-        assert_eq!(reputation.success_rate, BASIS_POINTS); // 100% success rate
-        assert_eq!(reputation.reputation_score, REPUTATION_SCALE); // Full reputation
-
-        let influence = DonorReputationContract::calculate_influence(env.clone(), donor.clone()).unwrap();
-        assert_eq!(influence, MAX_REPUTATION_MULTIPLIER); // Maximum influence
+            let influence = DonorReputationContract::calculate_influence(env.clone(), donor.clone()).unwrap();
+            assert_eq!(influence, MAX_REPUTATION_MULTIPLIER);
+        });
     }
 
     #[test]
@@ -749,18 +757,18 @@ mod tests {
         let admin = Address::generate(&env);
         let donor = Address::generate(&env);
 
-        DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+        with_contract(&env, || {
+            DonorReputationContract::initialize(env.clone(), admin.clone()).unwrap();
+            DonorReputationContract::record_project_funded(
+                env.clone(),
+                donor.clone(),
+                1,
+                DEFAULT_MIN_FUNDING_THRESHOLD / 2,
+                2,
+            ).unwrap();
 
-        // Fund below threshold - should not create reputation
-        DonorReputationContract::record_project_funded(
-            env.clone(),
-            donor.clone(),
-            1,
-            DEFAULT_MIN_FUNDING_THRESHOLD / 2, // Below threshold
-            2,
-        ).unwrap();
-
-        let result = DonorReputationContract::get_donor_reputation(env.clone(), donor.clone());
-        assert!(result.is_err()); // No reputation created
+            let result = DonorReputationContract::get_donor_reputation(env.clone(), donor.clone());
+            assert!(result.is_err());
+        });
     }
 }
