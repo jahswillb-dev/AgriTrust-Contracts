@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::println;
-use soroban_sdk::{Address, Env, Vec, testutils::{Address as _, Ledger}};
+use soroban_sdk::{token, Address, Env, Vec, testutils::{Address as _, Ledger}};
 use crate::matching_pool::{
     MatchingPoolContract, MatchingPoolContractClient, FIXED_POINT_SCALE, isqrt_fixed_point,
 };
@@ -12,7 +12,8 @@ fn test_matching_pool_full_cycle_10_projects_100_donors() {
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
-    let token = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_admin = token::StellarAssetClient::new(&env, &token);
     let contract_id = env.register_contract(None, MatchingPoolContract);
     let client = MatchingPoolContractClient::new(&env, &contract_id);
 
@@ -43,21 +44,22 @@ fn test_matching_pool_full_cycle_10_projects_100_donors() {
     assert_eq!(pool.requires_sep12, true);
     assert_eq!(pool.is_active, true);
 
-    // Verify SEP-12 donors
+    // Create, verify SEP-12, and mint tokens to all donors in one go
+    let mut donors = Vec::new(&env);
     for d in 0..num_donors {
         let donor = Address::generate(&env);
         client.verify_sep12_identity(&admin, &donor);
         assert_eq!(client.is_sep12_verified(&donor), true);
+        token_admin.mint(&donor, &max_donation_per_donor);
+        donors.push_back(donor);
     }
 
     // Simulate donations from 100 donors to 10 projects
     // Donor distribution pattern: each donor donates to 2-3 projects
     let mut total_donated = 0i128;
-    let mut donor_list = Vec::new(&env);
 
     for donor_idx in 0..num_donors {
-        let donor = Address::generate(&env);
-        donor_list.push_back(donor.clone());
+        let donor = donors.get(donor_idx as u32).unwrap();
 
         // Determine how many projects this donor supports (2-3)
         let projects_to_support = 2 + (donor_idx % 2); // 2 or 3 projects
@@ -145,7 +147,8 @@ fn test_quadratic_funding_incentives() {
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
-    let token = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_admin = token::StellarAssetClient::new(&env, &token);
     let contract_id = env.register_contract(None, MatchingPoolContract);
     let client = MatchingPoolContractClient::new(&env, &contract_id);
 
@@ -170,6 +173,7 @@ fn test_quadratic_funding_incentives() {
     // Scenario 1: Centralized donations (10 donors, each gives 10M to one project)
     for donor_idx in 0..10u32 {
         let donor = Address::generate(&env);
+        token_admin.mint(&donor, &10_000_000i128);
         client
             .donate(&pool_id, &1u64, &donor, &10_000_000i128);
     }
@@ -178,6 +182,7 @@ fn test_quadratic_funding_incentives() {
     for donor_idx in 0..50u32 {
         let donor = Address::generate(&env);
         let project_id = 2 + (donor_idx % 8); // Projects 2-9
+        token_admin.mint(&donor, &2_000_000i128);
         client
             .donate(&pool_id, &(project_id as u64), &donor, &2_000_000i128);
     }
@@ -232,7 +237,8 @@ fn test_sep12_verification_prevents_unverified_donations() {
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
-    let token = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_admin = token::StellarAssetClient::new(&env, &token);
     let contract_id = env.register_contract(None, MatchingPoolContract);
     let client = MatchingPoolContractClient::new(&env, &contract_id);
 
@@ -254,20 +260,21 @@ fn test_sep12_verification_prevents_unverified_donations() {
     let unverified_donor = Address::generate(&env);
     let verified_donor = Address::generate(&env);
 
+    // Mint tokens to both donors
+    token_admin.mint(&unverified_donor, &10_000_000i128);
+    token_admin.mint(&verified_donor, &10_000_000i128);
+
     // Verify the verified donor
     client.verify_sep12_identity(&admin, &verified_donor);
     assert_eq!(client.is_sep12_verified(&verified_donor), true);
     assert_eq!(client.is_sep12_verified(&unverified_donor), false);
 
     // Try donation with unverified donor - should fail
-    client.donate(&pool_id, &1u64, &unverified_donor, &10_000_000i128);
-    #[allow(unused_must_use)] {
     let result = client.try_donate(&pool_id, &1u64, &unverified_donor, &10_000_000i128);
     assert!(
         result.is_err(),
         "Unverified donor should not be able to donate when SEP-12 is required"
     );
-}
 
     // Verified donor should succeed
     client.donate(&pool_id, &1u64, &verified_donor, &10_000_000i128);
@@ -313,7 +320,8 @@ fn test_incentive_mathematica_invariant() {
     env.mock_all_auths();
 
     let admin = Address::generate(&env);
-    let token = Address::generate(&env);
+    let token = env.register_stellar_asset_contract_v2(admin.clone());
+    let token_admin = token::StellarAssetClient::new(&env, &token);
     let contract_id = env.register_contract(None, MatchingPoolContract);
     let client = MatchingPoolContractClient::new(&env, &contract_id);
 
@@ -338,12 +346,14 @@ fn test_incentive_mathematica_invariant() {
 
     for i in 0..5 {
         let donor = Address::generate(&env);
+        token_admin.mint(&donor, &100_000_000i128);
         client
             .donate(&pool_id, &1u64, &donor, &100_000_000i128);
     }
 
     for i in 0..50 {
         let donor = Address::generate(&env);
+        token_admin.mint(&donor, &10_000_000i128);
         client
             .donate(&pool_id, &2u64, &donor, &10_000_000i128);
     }
