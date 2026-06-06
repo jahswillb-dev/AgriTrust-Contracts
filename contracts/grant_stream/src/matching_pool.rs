@@ -348,6 +348,12 @@ impl MatchingPoolContract {
             &amount,
         );
 
+        // Check if this is a new donor BEFORE recording the donation
+        let is_new_donor = !env
+            .storage()
+            .instance()
+            .has(&StorageKey::Donation(pool_id, project_id, donor.clone()));
+
         // Record donation with reputation-influenced amount for matching calculations
         let donation = Donation {
             pool_id,
@@ -375,11 +381,6 @@ impl MatchingPoolContract {
                 sqrt_sum_of_sqrt_donations: 0,
                 total_matched: 0,
             });
-
-        let is_new_donor = !env
-            .storage()
-            .instance()
-            .has(&StorageKey::Donation(pool_id, project_id, donor.clone()));
 
         contributions.total_contributions = contributions
             .total_contributions
